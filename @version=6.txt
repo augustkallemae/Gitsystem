@@ -1,0 +1,69 @@
+//@version=6
+strategy("RSI & EMA Optimized for XAUUSD - Advanced with Volatility Filter", overlay=true)
+
+// Parameetrid
+emaShortLength = input.int(12, title="Short EMA Length", minval=1) // Lühike EMA
+emaLongLength = input.int(35, title="Long EMA Length", minval=1) // Pikk EMA
+rsiLength = input.int(14, title="RSI Length", minval=1)
+rsiOverbought = input.int(65, title="RSI Overbought Level", minval=50, maxval=100) // Ülemine tase
+rsiOversold = input.int(35, title="RSI Oversold Level", minval=0, maxval=50) // Alumine tase
+atrMultiplierSL = input.float(1.0, title="ATR Multiplier for Stop Loss", step=0.1) // SL ATR kordaja
+atrMultiplierTP = input.float(3.0, title="ATR Multiplier for Take Profit", step=0.1) // TP ATR kordaja
+atrVolatilityThreshold = input.float(1.5, title="ATR Volatility Threshold", step=0.1) // Volatiilsuse lävi
+maxTradesPerDay = input.int(3, title="Max Trades Per Day", minval=1) // Päevas maksimaalne tehingute arv
+exitAfterBars = input.int(10, title="Exit After Bars", minval=1) // Aja piirang väljumiseks
+
+// Indikaatorid
+emaShort = ta.ema(close, emaShortLength)
+emaLong = ta.ema(close, emaLongLength)
+rsi = ta.rsi(close, rsiLength)
+atr = ta.atr(14)
+
+// Volatiilsuse filter
+atrVolatility = atr > atrVolatilityThreshold
+
+// Kauplemistingimused (lõdvendatud)
+shortCondition = emaShort > emaLong and rsi < rsiOversold and atrVolatility // Tingimused lühikese positsiooni jaoks
+longCondition = emaShort < emaLong and rsi > rsiOverbought and atrVolatility // Tingimused pika positsiooni jaoks
+
+// Muutujad SL ja TP jaoks
+var float slPrice = na
+var float tpPrice = na
+
+// Aja jälgimine positsiooni avamise hetkest
+var int barsSinceEntry = na
+if (strategy.position_size != 0)
+    barsSinceEntry := na(barsSinceEntry) ? 0 : barsSinceEntry + 1
+else
+    barsSinceEntry := na
+
+// Päevase tehingute arvu loendur
+var int tradesToday = 0
+if (dayofweek != dayofweek[1])
+    tradesToday := 0
+
+// Lühikeste positsioonide sisenemise ja väljumise tingimused
+if (shortCondition and strategy.position_size == 0 and tradesToday < maxTradesPerDay)
+    slPrice := close + atr * atrMultiplierSL
+    tpPrice := close - atr * atrMultiplierTP
+    strategy.entry("Short", strategy.short)
+    tradesToday := tradesToday + 1
+
+if (barsSinceEntry >= exitAfterBars and strategy.position_size < 0)
+    strategy.close("Short", comment="Time Exit")
+
+// Pikkade positsioonide sisenemise ja väljumise tingimused
+if (longCondition and strategy.position_size == 0 and tradesToday < maxTradesPerDay)
+    slPrice := close - atr * atrMultiplierSL
+    tpPrice := close + atr * atrMultiplierTP
+    strategy.entry("Long", strategy.long)
+    tradesToday := tradesToday + 1
+
+if (barsSinceEntry >= exitAfterBars and strategy.position_size > 0)
+    strategy.close("Long", comment="Time Exit")
+
+// Visualiseerimine graafikul
+plot(slPrice, title="Stop Loss", color=color.red, linewidth=2, style=plot.style_line)
+plot(tpPrice, title="Take Profit", color=color.green, linewidth=2, style=plot.style_line)
+plot(emaShort, title="Short EMA", color=color.blue)
+plot(emaLong, title="Long EMA", color=color.orange)
